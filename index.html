@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>赤曰</title>
+  <!-- 引入 crypto-js 用于 SHA-256 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <style>
+    /* 页面背景铺满 + 基础重置 */
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      /* ↓↓↓ 在这里换上你自己的背景图 ↓↓↓ */
+      background-image: url('16113792_p0.jpg');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed; /* 背景固定，滚动不变 */
+    }
+
+    /* 半透明白色内容底板 */
+    .content-box {
+      max-width: 500px;
+      margin: 40px auto;
+      background: rgba(255, 255, 255, 0.4); /* 40% 不透明白底 */
+      backdrop-filter: blur(6px);           /* 毛玻璃效果，可选删除 */
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      padding: 25px;
+    }
+
+    h2 { text-align: center; color: #333; }
+
+    textarea, input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+      box-sizing: border-box;
+      background: rgba(255,255,255,0.7); /* 输入框也带一点半透明，更协调 */
+    }
+
+    button {
+      background: #4a90e2;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      margin: 8px 5px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover { background: #357abd; }
+
+    #output {
+      background: rgba(255,255,255,0.7);
+      padding: 15px;
+      min-height: 50px;
+      word-break: break-all;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-top: 10px;
+    }
+
+    .hint { font-size: 13px; color: #555; margin-top: 5px; }
+
+    /* 手机端小屏适配 */
+    @media (max-width: 540px) {
+      .content-box {
+        margin: 10px;
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="content-box">
+    <h2>赤红说了什么？</h2>
+
+    <label>赤红说...（明文）：</label>
+    <textarea id="plaintext" rows="3" placeholder="输入要赤红转述的文字"></textarea>
+
+    <label>他的意思是——（密文）：</label>
+    <textarea id="ciphertext" rows="3" placeholder="输入赤语，如：. ... ...."></textarea>
+
+    <label>赤红还说...（密语）：</label>
+    <input type="text" id="key" placeholder="输入密语，例如：本大爷世界第一！">
+
+    <div>
+      <button onclick="encrypt()">🔒 加密</button>
+      <button onclick="decrypt()">🔓 解密</button>
+      <button onclick="copyResult()">📋 复制结果</button>
+      <button onclick="clearAll()">🧹 清空</button>
+    </div>
+
+    <label>结果：</label>
+    <div id="output"></div>
+    <div class="hint">✅ 密语可以是任意字符（但不推荐使用emoji），越长越安全。相同密语才能成功解密。</div>
+  </div>
+
+  <script>
+    // ---------- 工具函数 ----------
+    function toBytes(str) {
+      return new TextEncoder().encode(str);
+    }
+
+    function fromBytes(bytes) {
+      return new TextDecoder().decode(bytes);
+    }
+
+    // 使用 SHA-256 哈希密语，得到 32 字节种子
+    function getSeed(keyStr) {
+      const wordArray = CryptoJS.SHA256(keyStr);
+      const seed = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) {
+        seed[i] = (wordArray.words[Math.floor(i / 4)] >>> (24 - (i % 4) * 8)) & 0xFF;
+      }
+      return seed;
+    }
+
+    // 基于种子的伪随机字节生成器（简单的密钥流）
+    function generateKeyStream(seed, length) {
+      const stream = new Uint8Array(length);
+      const state = new Uint8Array(seed);
+      let a = 0, b = 0;
+      for (let i = 0; i < length; i++) {
+        a = (a + 1) % 32;
+        b = (b + state[a]) % 32;
+        [state[a], state[b]] = [state[b], state[a]];
+        const idx = (state[a] + state[b]) % 32;
+        stream[i] = state[idx];
+      }
+      return stream;
+    }
+
+    // 加密
+    function encrypt() {
+      const plaintext = document.getElementById('plaintext').value;
+      const key = document.getElementById('key').value;
+      const outputDiv = document.getElementById('output');
+
+      try {
+        if (!plaintext) throw new Error('请填写明文');
+        if (!key) throw new Error('请填写密语');
+
+        const plainBytes = toBytes(plaintext);
+        const seed = getSeed(key);
+        const keyStream = generateKeyStream(seed, plainBytes.length);
+
+        const encryptedBytes = plainBytes.map((b, i) => b ^ keyStream[i]);
+
+        const dotGroups = [];
+        for (const byte of encryptedBytes) {
+          let hex6 = byte.toString(6).padStart(4, '0');
+          for (const ch of hex6) {
+            const digit = parseInt(ch, 6);
+            dotGroups.push('.'.repeat(digit + 1));
+          }
+        }
+
+        const result = dotGroups.join(' ');
+        outputDiv.textContent = result;
+        document.getElementById('ciphertext').value = result;
+      } catch (e) {
+        outputDiv.textContent = '❌ 加密出错：' + e.message;
+      }
+    }
+
+    // 解密
+    function decrypt() {
+      const ciphertext = document.getElementById('ciphertext').value.trim();
+      const key = document.getElementById('key').value;
+      const outputDiv = document.getElementById('output');
+
+      try {
+        if (!ciphertext) throw new Error('请填写赤语（密文点串）');
+        if (!key) throw new Error('请填写密语');
+
+        const groups = ciphertext.split(/\s+/).filter(g => g.length > 0);
+        for (const g of groups) {
+          if (!/^\.+$/.test(g)) throw new Error('赤语只能包含点和空格');
+        }
+        if (groups.length % 4 !== 0) throw new Error('赤语密文点组的个数必须是4的倍数');
+
+        const encryptedBytes = [];
+        for (let i = 0; i < groups.length; i += 4) {
+          const digits = groups.slice(i, i + 4).map(g => g.length - 1);
+          const hex6Str = digits.join('');
+          const byteValue = parseInt(hex6Str, 6);
+          if (isNaN(byteValue) || byteValue < 0 || byteValue > 255) {
+            throw new Error('赤语格式有误');
+          }
+          encryptedBytes.push(byteValue);
+        }
+
+        const seed = getSeed(key);
+        const keyStream = generateKeyStream(seed, encryptedBytes.length);
+        const decryptedBytes = encryptedBytes.map((b, i) => b ^ keyStream[i]);
+
+        const plaintext = fromBytes(new Uint8Array(decryptedBytes));
+        outputDiv.textContent = plaintext;
+        document.getElementById('plaintext').value = plaintext;
+      } catch (e) {
+        outputDiv.textContent = '❌ 青绿尽力了：' + e.message;
+      }
+    }
+
+    // 一键复制
+    function copyResult() {
+      const output = document.getElementById('output').textContent;
+      if (!output || output.startsWith('❌')) {
+        alert('没有可复制的结果');
+        return;
+      }
+      navigator.clipboard.writeText(output).then(() => {
+        alert('已复制到剪贴板');
+      }).catch(() => {
+        alert('复制失败，请手动复制');
+      });
+    }
+
+    // 一键清空
+    function clearAll() {
+      document.getElementById('plaintext').value = '';
+      document.getElementById('ciphertext').value = '';
+      document.getElementById('key').value = '';
+      document.getElementById('output').textContent = '';
+    }
+  </script>
+</body>
+</html>
